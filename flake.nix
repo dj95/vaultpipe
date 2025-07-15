@@ -1,5 +1,5 @@
 {
-  description = "Helps you to identify outdated helm charts in your argocd instance.";
+  description = "A configurable and themable statusbar for zellij.";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -12,9 +12,7 @@
 
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
-      inputs = {
-        nixpkgs.follows = "nixpkgs";
-      };
+      inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
@@ -35,33 +33,36 @@
           overlays = [ (import rust-overlay) ];
         };
 
-        rustWithExtensions = pkgs.rust-bin.stable.latest.default.override {
+        rustWithWasiTarget = pkgs.rust-bin.stable.latest.default.override {
           extensions = [
-            "cargo"
             "rust-src"
             "rust-std"
-            "clippy"
+            "rust-analyzer"
           ];
+          targets = [ "aarch64-apple-darwin" ];
         };
 
-        craneLib = (crane.mkLib pkgs);
+        # NB: we don't need to overlay our custom toolchain for the *entire*
+        # pkgs (which would require rebuidling anything else which uses rust).
+        # Instead, we just want to update the scope that crane will use by appending
+        # our specific toolchain there.
+        craneLib = (crane.mkLib pkgs).overrideToolchain rustWithWasiTarget;
 
         vaultpipe = craneLib.buildPackage {
           src = craneLib.cleanCargoSource (craneLib.path ./.);
 
+          # Tests currently need to be run via `cargo wasi` which
+          # isn't packaged in nixpkgs yet...
+          doCheck = false;
           doNotSign = true;
 
           buildInputs =
             [
               # Add additional build inputs here
-              pkgs.pkg-config
               pkgs.libiconv
-              pkgs.openssl
             ]
             ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
               # Additional darwin specific inputs can be set here
-              pkgs.libpng
-              pkgs.zlib
             ];
         };
       in
@@ -73,15 +74,21 @@
         packages.default = vaultpipe;
 
         devShells.default = craneLib.devShell {
+          # Inherit inputs from checks.
           checks = self.checks.${system};
 
+          # Extra inputs can be added here; cargo and rustc are provided by default
+          # from the toolchain that was specified earlier.
           packages = with pkgs; [
-            rustWithExtensions
+            just
+            rustWithWasiTarget
             cargo-audit
+            cargo-component
             cargo-edit
+            cargo-nextest
             cargo-watch
+            clippy
             libiconv
-            rust-analyzer
           ];
         };
       }
