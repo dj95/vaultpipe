@@ -30,8 +30,7 @@ struct Args {
     command: Vec<String>,
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     // Initialize tracing subscriber with environment configuration
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
