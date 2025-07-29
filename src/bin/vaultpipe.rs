@@ -8,7 +8,7 @@ use std::sync::Arc;
 use vaultpipe::config;
 use vaultpipe::env;
 use vaultpipe::pty;
-use vaultpipe::source::{get_secret_source_from_uri, Source, initialize_source_by_name};
+use vaultpipe::source::{get_secret_source_from_uri, initialize_source_by_name, Source};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -30,7 +30,8 @@ struct Args {
     command: Vec<String>,
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     // Initialize tracing subscriber with environment configuration
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
@@ -56,7 +57,7 @@ fn main() -> Result<()> {
         if !source_map.contains_key(key) {
             let src = match initialize_source_by_name(&source_name) {
                 Some(s) => s,
-                None => continue
+                None => continue,
             };
 
             source_map.insert(source_name.clone(), src);
@@ -67,7 +68,6 @@ fn main() -> Result<()> {
         env.insert(key.clone(), new_value);
     }
 
-    pty::run(&args.command, env, args.clear_env)?;
-
-    Ok(())
+    let status = pty::run(&args.command, env, args.clear_env)?;
+    std::process::exit(status as i32);
 }

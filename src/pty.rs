@@ -4,8 +4,8 @@ use portable_pty::{CommandBuilder, NativePtySystem, PtySize};
 use terminal_size::{terminal_size, Height, Width};
 
 use std::collections::BTreeMap;
-use std::env;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Write};
+use std::{env, io};
 
 fn build_command(
     command: &[String],
@@ -60,16 +60,27 @@ pub fn run(command: &[String], env: BTreeMap<String, String>, clear_env: bool) -
         .spawn_command(build_command(command, env, clear_env)?)
         .map_err(|e| miette!(e))?;
 
-    // Both stdout and stderr are merged here!
-    let mut reader = BufReader::new(pair.master.try_clone_reader().map_err(|e| miette!(e))?);
+    let mut reader = pair.master.try_clone_reader().map_err(|e| miette!(e))?;
 
-    let mut line = String::new();
-    while reader.read_line(&mut line).into_diagnostic()? > 0 {
-        print!("{}", line); // Already interleaved output
-        line.clear();
-    }
+    let reader_thread = tokio::spawn(async move {
+        let mut stdout = io::stdout();
+        let mut buffer = [0u8; 1024];
+        loop {
+            match reader.read(&mut buffer) {
+                Ok(0) | Err(_) => break,
+                Ok(count) => {
+                    if stdout.write_all(&buffer[..count]).is_err() {
+                        break;
+                    }
+                    let _ = stdout.flush();
+                }
+            }
+        }
+    });
 
     let status = child.wait().into_diagnostic()?;
+
+    reader_thread.abort();
 
     Ok(status.exit_code())
 }
