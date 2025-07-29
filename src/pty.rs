@@ -4,7 +4,7 @@ use portable_pty::{CommandBuilder, NativePtySystem, PtySize};
 use terminal_size::{terminal_size, Height, Width};
 
 use std::collections::BTreeMap;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::{env, io};
 
 fn build_command(
@@ -61,6 +61,7 @@ pub fn run(command: &[String], env: BTreeMap<String, String>, clear_env: bool) -
         .map_err(|e| miette!(e))?;
 
     let mut reader = pair.master.try_clone_reader().map_err(|e| miette!(e))?;
+    let mut writer = pair.master.take_writer().map_err(|e| miette!(e))?;
 
     let reader_thread = tokio::spawn(async move {
         let mut stdout = io::stdout();
@@ -78,9 +79,25 @@ pub fn run(command: &[String], env: BTreeMap<String, String>, clear_env: bool) -
         }
     });
 
+    let writer_thread = tokio::spawn(async move {
+        let mut stdin = io::stdin();
+        let mut buffer = [0u8; 1024];
+        loop {
+            match stdin.read(&mut buffer) {
+                Ok(0) | Err(_) => break,
+                Ok(count) => {
+                    if writer.write_all(&buffer[..count]).is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+    });
+
     let status = child.wait().into_diagnostic()?;
 
     reader_thread.abort();
+    writer_thread.abort();
 
     Ok(status.exit_code())
 }
