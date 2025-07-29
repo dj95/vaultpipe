@@ -9,7 +9,7 @@ name = "kp"
 [dependencies]
 base64 = "0.22.1"
 crypto_box = "0.9.1"
-keyring = { version = "3.6.2", features = ["apple-native", "linux-native", "sync-secret-service"] }
+keyring = { version = "3.6.3", features = ["apple-native", "linux-native", "sync-secret-service"] }
 miette = { version = "7.6.0", features = ["fancy"] }
 rand = "0.9.1"
 serde = { version = "1.0.219", features = ["derive"] }
